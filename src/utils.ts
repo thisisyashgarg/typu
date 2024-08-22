@@ -57,3 +57,9 @@ export const sendRequest = async (details: CurlDetails): Promise<any> => {
     return await response.text()
   }
 }
+
+export const formatTypeOutput = (typeObj: Record<string, string>): string => {
+  return JSON.stringify(typeObj, null, 2)
+    .replace(/\"([^(\")"]+)\":/g, "$1:") // Remove quotes around keys
+    .replace(/\"(string|number|boolean|object|undefined|null)\"/g, "$1") // Remove quotes around types
+}

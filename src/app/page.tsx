@@ -1,6 +1,11 @@
 "use client"
 import { useState } from "react"
-import { extractCurlDetails, extractType, sendRequest } from "../utils"
+import {
+  extractCurlDetails,
+  extractType,
+  formatTypeOutput,
+  sendRequest,
+} from "../utils"
 import { RequestType, ResponseType } from "@/types"
 
 const Home = () => {
@@ -14,8 +19,8 @@ const Home = () => {
 
   const handleCurlSubmit = async () => {
     try {
-      setLoading(true) // Start the loader
-      setErrorMessage("") // Clear any previous error message
+      setLoading(true)
+      setErrorMessage("")
       const curlDetails = extractCurlDetails(curlCommand)
       setRequestType(extractType(curlDetails?.body))
       const response = await sendRequest(curlDetails!)
@@ -26,7 +31,7 @@ const Home = () => {
         "Invalid cURL command or API request failed. Please check and try again."
       )
     } finally {
-      setLoading(false) // Stop the loader
+      setLoading(false)
     }
   }
 
@@ -101,11 +106,11 @@ const Home = () => {
               Request Type
             </h2>
             <pre className="bg-[#212529] p-4 rounded-md text-[#ADB5BD] overflow-x-auto">
-              {JSON.stringify(requestType, null, 2)}
+              {formatTypeOutput(requestType)}
             </pre>
             <button
               onClick={() =>
-                handleCopy(JSON.stringify(requestType, null, 2), "request")
+                handleCopy(formatTypeOutput(requestType), "request")
               }
               className="absolute top-0 right-0 mt-2 mr-2 bg-[#495057] hover:bg-[#6C757D] text-[#F8F9FA] font-bold py-1 px-3 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ADB5BD]"
             >
@@ -119,11 +124,11 @@ const Home = () => {
               Response Type
             </h2>
             <pre className="bg-[#212529] p-4 rounded-md text-[#ADB5BD] overflow-x-auto">
-              {JSON.stringify(responseType, null, 2)}
+              {formatTypeOutput(responseType)}
             </pre>
             <button
               onClick={() =>
-                handleCopy(JSON.stringify(responseType, null, 2), "response")
+                handleCopy(formatTypeOutput(responseType), "response")
               }
               className="absolute top-0 right-0 mt-2 mr-2 bg-[#495057] hover:bg-[#6C757D] text-[#F8F9FA] font-bold py-1 px-3 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ADB5BD]"
             >
