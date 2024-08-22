@@ -5,7 +5,7 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Typist",
+  title: "Typu",
   description: "A simple tool to generate TypeScript types from cURL commands.",
 }
 
