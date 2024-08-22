@@ -1,17 +1,12 @@
 "use client"
 import { useState } from "react"
-import {
-  extractCurlDetails,
-  extractType,
-  formatTypeOutput,
-  sendRequest,
-} from "../utils"
-import { RequestType, ResponseType } from "@/types"
+import { extractRequestBody, extractType } from "../utils"
+import axios from "axios"
 
 const Home = () => {
   const [curlCommand, setCurlCommand] = useState<string>("")
-  const [requestType, setRequestType] = useState<RequestType | null>(null)
-  const [responseType, setResponseType] = useState<ResponseType | null>(null)
+  const [requestType, setRequestType] = useState<any>(null)
+  const [responseType, setResponseType] = useState<any>(null)
   const [requestCopyStatus, setRequestCopyStatus] = useState<string>("Copy")
   const [responseCopyStatus, setResponseCopyStatus] = useState<string>("Copy")
   const [loading, setLoading] = useState<boolean>(false)
@@ -21,10 +16,11 @@ const Home = () => {
     try {
       setLoading(true)
       setErrorMessage("")
-      const curlDetails = extractCurlDetails(curlCommand)
-      setRequestType(extractType(curlDetails?.body))
-      const response = await sendRequest(curlDetails!)
-      setResponseType(extractType(response))
+      const requestBody = extractRequestBody(curlCommand)
+      setRequestType(extractType(requestBody))
+      const response = await axios.post("/api/curl", { curl: curlCommand })
+      const data = JSON.parse(response.data.data)
+      setResponseType(extractType(data))
     } catch (error) {
       console.error("Error processing cURL command:", error)
       setErrorMessage(
@@ -106,12 +102,10 @@ const Home = () => {
               Request Type
             </h2>
             <pre className="bg-[#212529] p-4 rounded-md text-[#ADB5BD] overflow-x-auto">
-              {formatTypeOutput(requestType)}
+              {requestType}
             </pre>
             <button
-              onClick={() =>
-                handleCopy(formatTypeOutput(requestType), "request")
-              }
+              onClick={() => handleCopy(requestType, "request")}
               className="absolute top-0 right-0 mt-2 mr-2 bg-[#495057] hover:bg-[#6C757D] text-[#F8F9FA] font-bold py-1 px-3 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ADB5BD]"
             >
               {requestCopyStatus}
@@ -124,12 +118,10 @@ const Home = () => {
               Response Type
             </h2>
             <pre className="bg-[#212529] p-4 rounded-md text-[#ADB5BD] overflow-x-auto">
-              {formatTypeOutput(responseType)}
+              {responseType}
             </pre>
             <button
-              onClick={() =>
-                handleCopy(formatTypeOutput(responseType), "response")
-              }
+              onClick={() => handleCopy(responseType, "response")}
               className="absolute top-0 right-0 mt-2 mr-2 bg-[#495057] hover:bg-[#6C757D] text-[#F8F9FA] font-bold py-1 px-3 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ADB5BD]"
             >
               {responseCopyStatus}

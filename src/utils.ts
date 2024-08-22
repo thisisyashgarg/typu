@@ -1,43 +1,94 @@
 import { CurlDetails } from "./types"
 
-export const extractCurlDetails = (curlCommand: string): CurlDetails | null => {
-  const urlMatch = curlCommand.match(/(https?:\/\/[^\s]+)/)
-  const methodMatch = curlCommand.match(/-X\s+(\w+)/)
-  const headerMatches = [...curlCommand.matchAll(/-H\s+"([^:]+):\s*([^"]+)"/g)]
-  const bodyMatch = curlCommand.match(/-d\s*'(.+?)'/)
+export const extractRequestBody = (curlCommand: string): any => {
+  // Match the body data (supports single quotes, double quotes, or no quotes)
+  const bodyMatch = curlCommand.match(
+    /(?:--data-raw|-d|--data)\s+(["'])([\s\S]*?)\1|(?:--data-raw|-d|--data)\s+(\{[\s\S]*\})/
+  )
 
-  if (!urlMatch || !methodMatch) return null
+  let body = {}
 
-  const url = urlMatch[0]
-  const method = methodMatch[1]
-  const headers: Record<string, string> = {}
-
-  headerMatches.forEach(([_, key, value]) => {
-    headers[key] = value
-  })
-
-  let body
   if (bodyMatch) {
+    const rawBody = bodyMatch[2] || bodyMatch[3]
+
     try {
-      body = JSON.parse(bodyMatch[1])
+      // Attempt to parse the body as JSON
+      body = JSON.parse(rawBody)
     } catch (error) {
-      console.error("Invalid JSON in the request body:", error)
-      body = undefined
+      console.warn("Body is not valid JSON, returning as a string")
+      body = rawBody
     }
   }
 
-  return { url, method, headers, body }
+  return body
 }
 
-export const extractType = (data: any): { [key: string]: string } | null => {
-  if (typeof data !== "object") return null
-  const typeObj: { [key: string]: string } = {}
-  for (const key in data) {
-    if (data.hasOwnProperty(key)) {
-      typeObj[key] = typeof data[key]
+export const extractType = (data: any, parentKey = "Root"): string => {
+  const interfaceStack: string[] = []
+  const interfaceMap = new Map<string, string>()
+  const rootInterface = `I${capitalizeFirstLetter(parentKey)}`
+  const pendingInterfaces: Array<{
+    key: string
+    value: any
+    interfaceName: string
+  }> = [{ key: parentKey, value: data, interfaceName: rootInterface }]
+
+  while (pendingInterfaces.length > 0) {
+    const { key, value, interfaceName } = pendingInterfaces.pop()!
+
+    if (typeof value !== "object" || value === null) continue
+
+    const lines: string[] = [`export interface ${interfaceName} {`]
+
+    for (const k in value) {
+      if (value.hasOwnProperty(k)) {
+        const v = value[k]
+
+        if (v === null) {
+          lines.push(`  ${k}: null;`)
+        } else if (v === undefined) {
+          lines.push(`  ${k}: undefined;`)
+        } else if (Array.isArray(v)) {
+          if (v.length > 0) {
+            if (typeof v[0] === "object") {
+              const nestedInterfaceName = `I${capitalizeFirstLetter(k)}`
+              lines.push(`  ${k}: ${nestedInterfaceName}[];`)
+              pendingInterfaces.push({
+                key: k,
+                value: v[0],
+                interfaceName: nestedInterfaceName,
+              })
+            } else {
+              lines.push(`  ${k}: ${typeof v[0]}[];`)
+            }
+          } else {
+            lines.push(`  ${k}: any[];`)
+          }
+        } else if (typeof v === "object") {
+          const nestedInterfaceName = `I${capitalizeFirstLetter(k)}`
+          lines.push(`  ${k}: ${nestedInterfaceName};`)
+          pendingInterfaces.push({
+            key: k,
+            value: v,
+            interfaceName: nestedInterfaceName,
+          })
+        } else {
+          lines.push(`  ${k}: ${typeof v};`)
+        }
+      }
     }
+
+    lines.push("}")
+    interfaceMap.set(interfaceName, lines.join("\n"))
   }
-  return typeObj
+
+  interfaceStack.push(...Array.from(interfaceMap.values()).reverse())
+  return interfaceStack.join("\n\n")
+}
+
+// Helper function to capitalize the first letter of a string
+const capitalizeFirstLetter = (string: string): string => {
+  return string.charAt(0).toUpperCase() + string.slice(1)
 }
 
 export const sendRequest = async (details: CurlDetails): Promise<any> => {
