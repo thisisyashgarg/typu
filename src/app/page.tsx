@@ -132,6 +132,25 @@ const Home = () => {
           </div>
         )}
       </div>
+      <footer className="mt-8 text-center flex gap-2 text-[#ADB5BD]">
+        <a
+          href="https://github.com/thisisyashgarg/typu/issues/new"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:underline"
+        >
+          Report a Bug
+        </a>
+        •
+        <a
+          href="https://github.com/thisisyashgarg/typu"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:underline"
+        >
+          GitHub
+        </a>
+      </footer>
     </div>
   )
 }
