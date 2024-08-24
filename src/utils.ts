@@ -84,6 +84,11 @@ export const extractType = (data: any, parentKey = "Root"): string => {
   return interfaceStack.join("\n\n")
 }
 
+export const isHtml = (str: string): boolean => {
+  const pattern = /<\/?[a-z][\s\S]*>/i
+  return pattern.test(str)
+}
+
 const capitalizeFirstLetter = (string: string): string => {
   return string.charAt(0).toUpperCase() + string.slice(1)
 }
