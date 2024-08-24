@@ -1,6 +1,6 @@
 "use client"
 import { useState } from "react"
-import { extractRequestBody, extractType } from "../utils"
+import { extractRequestBody, extractType, isHtml } from "../utils"
 import axios from "axios"
 
 const Home = () => {
@@ -19,6 +19,10 @@ const Home = () => {
       const requestBody = extractRequestBody(curlCommand)
       setRequestType(extractType(requestBody))
       const response = await axios.post("/api/curl", { curl: curlCommand })
+      if (isHtml(response.data.data)) {
+        setResponseType(`export type IRoot = string; // HTML response`)
+        return
+      }
       const data = JSON.parse(response.data.data)
       setResponseType(extractType(data))
     } catch (error) {
