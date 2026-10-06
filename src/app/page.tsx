@@ -1,149 +1,217 @@
 "use client"
 import { useState } from "react"
-import { extractRequestBody, extractType, isHtml } from "../utils"
-import axios from "axios"
+import { generateTypes, parseMaybeJson } from "@/utils"
+
+const SAMPLE = `curl https://jsonplaceholder.typicode.com/posts \\
+  -H 'Content-Type: application/json' \\
+  -d '{"title": "Hello", "body": "World", "userId": 1}'`
+
+interface Panel {
+  title: string
+  code?: string
+  meta?: string
+  error?: string
+}
 
 const Home = () => {
-  const [curlCommand, setCurlCommand] = useState<string>("")
-  const [requestType, setRequestType] = useState<any>(null)
-  const [responseType, setResponseType] = useState<any>(null)
-  const [requestCopyStatus, setRequestCopyStatus] = useState<string>("Copy")
-  const [responseCopyStatus, setResponseCopyStatus] = useState<string>("Copy")
-  const [loading, setLoading] = useState<boolean>(false)
-  const [errorMessage, setErrorMessage] = useState<string>("")
+  const [input, setInput] = useState("")
+  const [typeName, setTypeName] = useState("")
+  const [panels, setPanels] = useState<Panel[]>([])
+  const [copied, setCopied] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  const handleCurlSubmit = async () => {
+  const generate = async () => {
+    const text = input.trim()
+    if (!text || loading) return
+    setLoading(true)
+    setError("")
+    setPanels([])
     try {
-      setLoading(true)
-      setErrorMessage("")
-      const requestBody = extractRequestBody(curlCommand)
-      setRequestType(extractType(requestBody))
-      const response = await axios.post("/api/curl", { curl: curlCommand })
-      if (isHtml(response.data.data)) {
-        setResponseType(`export type IRoot = string; // HTML response`)
+      if (/^[[{]/.test(text)) {
+        let value: unknown
+        try {
+          value = JSON.parse(text)
+        } catch (e) {
+          throw new Error(`Invalid JSON: ${(e as Error).message}`)
+        }
+        const [code] = generateTypes([{ name: typeName || "Root", value }])
+        setPanels([{ title: "Type", code }])
         return
       }
-      const data = JSON.parse(response.data.data)
-      setResponseType(extractType(data))
-    } catch (error) {
-      console.error("Error processing cURL command:", error)
-      setErrorMessage(
-        "Invalid cURL command or API request failed. Please check and try again."
-      )
+
+      const res = await fetch("/api/curl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ curl: text }),
+      })
+      const json = await res.json().catch(() => ({ error: "Server error." }))
+      if (!res.ok) throw new Error(json.error)
+
+      const { request, response, responseError } = json
+      const requestName = `${typeName}Request`
+      const responseName = `${typeName}Response`
+      const roots: Array<{ name: string; value: unknown }> = []
+      if (request.body !== undefined)
+        roots.push({
+          name: requestName,
+          value:
+            typeof request.body === "string"
+              ? parseMaybeJson(request.body)
+              : request.body,
+        })
+      const responseIsTyped = response && !response.binary && response.body
+      if (responseIsTyped)
+        roots.push({ name: responseName, value: parseMaybeJson(response.body) })
+      const generated = generateTypes(roots)
+
+      const next: Panel[] = []
+      if (request.body !== undefined)
+        next.push({ title: "Request body", code: generated.shift() })
+      next.push({
+        title: "Response",
+        meta: response
+          ? `${response.status} · ${response.durationMs} ms${response.contentType ? ` · ${response.contentType.split(";")[0]}` : ""}`
+          : undefined,
+        error: responseError,
+        code: responseIsTyped
+          ? generated.shift()
+          : response?.binary
+            ? `export type I${responseName} = Blob;`
+            : response
+              ? `export type I${responseName} = void;`
+              : undefined,
+      })
+      setPanels(next)
+    } catch (e) {
+      setError((e as Error).message || "Something went wrong.")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleCopy = async (text: string, type: "request" | "response") => {
+  const copy = async (text: string, index: number) => {
     try {
       await navigator.clipboard.writeText(text)
-      if (type === "request") {
-        setRequestCopyStatus("Copied!")
-        setTimeout(() => setRequestCopyStatus("Copy"), 2000)
-      } else {
-        setResponseCopyStatus("Copied!")
-        setTimeout(() => setResponseCopyStatus("Copy"), 2000)
-      }
-    } catch (error) {
-      console.error("Failed to copy text:", error)
+      setCopied(index)
+      setTimeout(() => setCopied((c) => (c === index ? null : c)), 1500)
+    } catch {
+      setError("Couldn't access the clipboard.")
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#212529] flex flex-col items-center justify-center p-4 font-roboto-mono text-[#E9ECEF]">
-      <div className="bg-[#343A40] shadow-md rounded-lg p-6 max-w-4xl w-full md:w-11/12 sm:w-full">
-        <h1 className="text-3xl font-semibold text-[#F8F9FA] mb-4 text-center">
-          Typu
+    <div className="min-h-screen bg-[#16181b] text-[#E9ECEF] flex flex-col">
+      <header className="px-6 pt-10 pb-6 max-w-6xl w-full mx-auto">
+        <h1 className="text-3xl font-bold tracking-tight">
+          typu<span className="text-[#7c9cff]">.</span>
         </h1>
-        <p className="text-lg text-[#F8F9FA] mb-6 text-center">
-          A simple tool to generate TypeScript types from cURL commands.
+        <p className="text-[#9aa1a9] mt-1">
+          Paste a cURL command or JSON, get TypeScript types.
         </p>
+      </header>
 
-        <textarea
-          value={curlCommand}
-          onChange={(e) => setCurlCommand(e.target.value)}
-          rows={5}
-          className="w-full p-3 border border-[#495057] bg-[#212529] rounded-md focus:outline-none focus:ring-2 focus:ring-[#495057] text-[#F8F9FA]"
-          placeholder="Paste your cURL command here"
-        />
-        <div className="flex justify-center mt-4">
-          <button
-            onClick={handleCurlSubmit}
-            type="button"
-            className="bg-[#495057] hover:bg-[#6C757D] text-[#F8F9FA] font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ADB5BD]"
-          >
-            {loading ? (
-              <svg
-                className="animate-spin h-5 w-5 text-[#F8F9FA]"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8v8H4z"
-                ></path>
-              </svg>
-            ) : (
-              "Generate Types"
-            )}
-          </button>
-        </div>
-
-        {errorMessage && (
-          <div className="mt-4 text-[#DE3545] text-center">{errorMessage}</div>
-        )}
-        {requestType && (
-          <div className="mt-6 relative">
-            <h2 className="text-xl font-semibold text-[#F8F9FA] mb-2">
-              Request Type
-            </h2>
-            <pre className="bg-[#212529] p-4 rounded-md text-[#ADB5BD] overflow-x-auto">
-              {requestType}
-            </pre>
+      <main className="flex-1 px-6 pb-10 max-w-6xl w-full mx-auto grid gap-6 lg:grid-cols-2">
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <label htmlFor="input" className="text-sm font-semibold text-[#c9ced4]">
+              Input
+            </label>
             <button
-              onClick={() => handleCopy(requestType, "request")}
-              className="absolute top-0 right-0 mt-2 mr-2 bg-[#495057] hover:bg-[#6C757D] text-[#F8F9FA] font-bold py-1 px-3 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ADB5BD]"
+              type="button"
+              onClick={() => setInput(SAMPLE)}
+              className="text-sm text-[#7c9cff] hover:underline"
             >
-              {requestCopyStatus}
+              Try a sample
             </button>
           </div>
-        )}
-        {responseType && (
-          <div className="mt-6 relative">
-            <h2 className="text-xl font-semibold text-[#F8F9FA] mb-2">
-              Response Type
-            </h2>
-            <pre className="bg-[#212529] p-4 rounded-md text-[#ADB5BD] overflow-x-auto">
-              {responseType}
-            </pre>
+          <textarea
+            id="input"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) generate()
+            }}
+            spellCheck={false}
+            rows={14}
+            className="w-full p-4 rounded-lg bg-[#0f1113] border border-[#2a2e33] font-mono text-sm leading-relaxed resize-y focus:outline-none focus:border-[#7c9cff]"
+            placeholder={"curl https://api.example.com/users/1\n\nor\n\n{ \"id\": 1, \"name\": \"Ada\" }"}
+          />
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="type-name" className="text-xs text-[#9aa1a9]">
+                Type name
+              </label>
+              <input
+                id="type-name"
+                value={typeName}
+                onChange={(e) => setTypeName(e.target.value.replace(/[^A-Za-z0-9_]/g, ""))}
+                placeholder="User"
+                className="w-40 px-3 py-2 rounded-md bg-[#0f1113] border border-[#2a2e33] font-mono text-sm focus:outline-none focus:border-[#7c9cff]"
+              />
+            </div>
             <button
-              onClick={() => handleCopy(responseType, "response")}
-              className="absolute top-0 right-0 mt-2 mr-2 bg-[#495057] hover:bg-[#6C757D] text-[#F8F9FA] font-bold py-1 px-3 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ADB5BD]"
+              type="button"
+              onClick={generate}
+              disabled={loading || !input.trim()}
+              className="ml-auto flex items-center gap-2 bg-[#7c9cff] hover:bg-[#93adff] disabled:opacity-50 disabled:cursor-not-allowed text-[#0f1113] font-semibold py-2 px-4 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              {responseCopyStatus}
+              {loading && (
+                <span className="h-4 w-4 rounded-full border-2 border-[#0f1113]/30 border-t-[#0f1113] animate-spin" />
+              )}
+              Generate types
+              <kbd className="hidden sm:inline text-xs opacity-60 font-sans">⌘↵</kbd>
             </button>
           </div>
-        )}
-      </div>
-      <footer className="mt-8 text-center flex gap-2 text-[#ADB5BD]">
+          {error && (
+            <p role="alert" className="text-sm text-[#ff6b7a]">
+              {error}
+            </p>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-4 min-w-0" aria-live="polite">
+          {panels.length === 0 && (
+            <div className="h-full min-h-48 rounded-lg border border-dashed border-[#2a2e33] flex items-center justify-center text-sm text-[#6c737a]">
+              {loading ? "Sending request…" : "Types appear here"}
+            </div>
+          )}
+          {panels.map((panel, i) => (
+            <div key={panel.title} className="rounded-lg border border-[#2a2e33] bg-[#0f1113] min-w-0">
+              <div className="flex items-center gap-3 px-4 py-2 border-b border-[#2a2e33]">
+                <h2 className="text-sm font-semibold text-[#c9ced4]">{panel.title}</h2>
+                {panel.meta && (
+                  <span className="text-xs font-mono text-[#9aa1a9] truncate">{panel.meta}</span>
+                )}
+                {panel.code && (
+                  <button
+                    type="button"
+                    onClick={() => copy(panel.code!, i)}
+                    className="ml-auto text-xs px-2 py-1 rounded bg-[#2a2e33] hover:bg-[#3a3f45]"
+                  >
+                    {copied === i ? "Copied" : "Copy"}
+                  </button>
+                )}
+              </div>
+              {panel.error && <p className="px-4 pt-3 text-sm text-[#ff6b7a]">{panel.error}</p>}
+              {panel.code && (
+                <pre className="p-4 overflow-x-auto font-mono text-sm leading-relaxed text-[#b8e0a8]">
+                  {panel.code}
+                </pre>
+              )}
+            </div>
+          ))}
+        </section>
+      </main>
+
+      <footer className="pb-8 text-center text-sm flex gap-2 justify-center text-[#6c737a]">
         <a
           href="https://github.com/thisisyashgarg/typu/issues/new"
           target="_blank"
           rel="noopener noreferrer"
           className="hover:underline"
         >
-          Report a Bug
+          Report a bug
         </a>
         •
         <a
