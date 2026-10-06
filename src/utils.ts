@@ -1,94 +1,90 @@
-export const extractRequestBody = (curlCommand: string): any => {
-  // Match the body data (supports single quotes, double quotes, or no quotes)
-  const bodyMatch = curlCommand.match(
-    /(?:--data-raw|-d|--data)\s+(["'])([\s\S]*?)\1|(?:--data-raw|-d|--data)\s+(\{[\s\S]*\})/
-  )
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
+const DATE_KEY = /(_at|_on|_date|_time)$|(At|On|Date|Time)$|^(date|time|timestamp)$/
 
-  let body = {}
+const pascal = (key: string): string =>
+  key
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join("") || "Item"
 
-  if (bodyMatch) {
-    const rawBody = bodyMatch[2] || bodyMatch[3]
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v)
 
-    try {
-      // Attempt to parse the body as JSON
-      body = JSON.parse(rawBody)
-    } catch (error) {
-      console.warn("Body is not valid JSON, returning as a string")
-      body = rawBody
-    }
+export const FILE_MARKER = "__typu_file__"
+
+export const generateTypes = (
+  roots: Array<{ name: string; value: unknown }>
+): string[] => {
+  const used = new Set<string>()
+  const uniqueName = (key: string) => {
+    const base = `I${pascal(key)}`
+    let name = base
+    for (let i = 2; used.has(name); i++) name = `${base}${i}`
+    used.add(name)
+    return name
   }
 
-  return body
-}
+  return roots.map(({ name, value }) => {
+    const declarations: string[] = []
 
-export const extractType = (data: any, parentKey = "Root"): string => {
-  const interfaceStack: string[] = []
-  const interfaceMap = new Map<string, string>()
-  const rootInterface = `I${capitalizeFirstLetter(parentKey)}`
-  const pendingInterfaces: Array<{
-    key: string
-    value: any
-    interfaceName: string
-  }> = [{ key: parentKey, value: data, interfaceName: rootInterface }]
+    const objectType = (objects: Record<string, unknown>[], key: string) => {
+      const interfaceName = uniqueName(key)
+      const slot = declarations.push("") - 1
+      const keys = Array.from(new Set(objects.flatMap(Object.keys)))
+      const lines = keys.map((k) => {
+        const samples = objects.filter((o) => k in o).map((o) => o[k])
+        const optional = samples.length < objects.length ? "?" : ""
+        const prop = IDENTIFIER.test(k) ? k : JSON.stringify(k)
+        return `  ${prop}${optional}: ${typeOf(samples, k)};`
+      })
+      declarations[slot] = lines.length
+        ? `export interface ${interfaceName} {\n${lines.join("\n")}\n}`
+        : `export interface ${interfaceName} {}`
+      return interfaceName
+    }
 
-  while (pendingInterfaces.length > 0) {
-    const { key, value, interfaceName } = pendingInterfaces.pop()!
+    const typeOf = (samples: unknown[], key: string): string => {
+      const parts = new Set<string>()
+      const objects: Record<string, unknown>[] = []
+      const arrays: unknown[][] = []
+      let hasNull = false
 
-    if (typeof value !== "object" || value === null) continue
-
-    const lines: string[] = [`export interface ${interfaceName} {`]
-
-    for (const k in value) {
-      if (value.hasOwnProperty(k)) {
-        const v = value[k]
-
-        if (v === null) {
-          lines.push(`  ${k}: null;`)
-        } else if (v === undefined) {
-          lines.push(`  ${k}: undefined;`)
-        } else if (Array.isArray(v)) {
-          if (v.length > 0) {
-            if (typeof v[0] === "object") {
-              const nestedInterfaceName = `I${capitalizeFirstLetter(k)}`
-              lines.push(`  ${k}: ${nestedInterfaceName}[];`)
-              pendingInterfaces.push({
-                key: k,
-                value: v[0],
-                interfaceName: nestedInterfaceName,
-              })
-            } else {
-              lines.push(`  ${k}: ${typeof v[0]}[];`)
-            }
-          } else {
-            lines.push(`  ${k}: any[];`)
-          }
-        } else if (typeof v === "object") {
-          const nestedInterfaceName = `I${capitalizeFirstLetter(k)}`
-          lines.push(`  ${k}: ${nestedInterfaceName};`)
-          pendingInterfaces.push({
-            key: k,
-            value: v,
-            interfaceName: nestedInterfaceName,
-          })
-        } else {
-          lines.push(`  ${k}: ${typeof v};`)
-        }
+      for (const s of samples) {
+        if (s === null || s === undefined) hasNull = true
+        else if (s === FILE_MARKER) parts.add("File")
+        else if (Array.isArray(s)) arrays.push(s)
+        else if (isPlainObject(s)) objects.push(s)
+        else parts.add(typeof s)
       }
+
+      if (arrays.length) {
+        const inner = typeOf(arrays.flat(), `${key}Item`)
+        parts.add(inner.includes(" ") ? `(${inner})[]` : `${inner}[]`)
+      }
+      if (objects.length) parts.add(objectType(objects, key))
+      if (hasNull) {
+        if (!parts.size) parts.add(DATE_KEY.test(key) ? "string" : "unknown")
+        parts.add("null")
+      }
+      return parts.size ? Array.from(parts).join(" | ") : "unknown"
     }
 
-    lines.push("}")
-    interfaceMap.set(interfaceName, lines.join("\n"))
+    if (isPlainObject(value)) {
+      objectType([value], name)
+    } else {
+      const typeName = uniqueName(name)
+      const slot = declarations.push("") - 1
+      declarations[slot] = `export type ${typeName} = ${typeOf([value], name)};`
+    }
+    return declarations.join("\n\n")
+  })
+}
+
+export const parseMaybeJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
   }
-
-  interfaceStack.push(...Array.from(interfaceMap.values()).reverse())
-  return interfaceStack.join("\n\n")
-}
-
-export const isHtml = (str: string): boolean => {
-  const pattern = /<\/?[a-z][\s\S]*>/i
-  return pattern.test(str)
-}
-
-const capitalizeFirstLetter = (string: string): string => {
-  return string.charAt(0).toUpperCase() + string.slice(1)
 }

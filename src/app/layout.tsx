@@ -1,12 +1,17 @@
 import type { Metadata } from "next"
-import { Nunito_Sans } from "next/font/google"
+import { Nunito_Sans, Roboto_Mono } from "next/font/google"
 import "./globals.css"
 
-const inter = Nunito_Sans({ subsets: ["latin"] })
+const sans = Nunito_Sans({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  adjustFontFallback: false,
+})
+const mono = Roboto_Mono({ subsets: ["latin"], variable: "--font-mono" })
 
 export const metadata: Metadata = {
   title: "Typu",
-  description: "A simple tool to generate TypeScript types from cURL commands.",
+  description: "Generate TypeScript types from cURL commands or JSON.",
 }
 
 export default function RootLayout({
@@ -15,15 +20,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-
-      <body className={inter.className}>{children}</body>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   )
 }
