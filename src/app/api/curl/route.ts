@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { toJsonString } from "curlconverter"
 import { lookup } from "dns/promises"
 import { BlockList, isIP } from "net"
 import { FILE_MARKER } from "@/utils"
@@ -129,6 +128,7 @@ export async function POST(req: Request) {
 
   let parsed: ParsedCurl
   try {
+    const { toJsonString } = await import("curlconverter")
     parsed = JSON.parse(toJsonString(curl.trim()))
   } catch (error) {
     return NextResponse.json(
